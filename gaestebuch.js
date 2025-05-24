@@ -1,22 +1,58 @@
 document.addEventListener('DOMContentLoaded', function() {
     const form = document.getElementById('gaestebuchForm');
     const eintraegeListe = document.getElementById('eintraegeListe');
+    const STORAGE_KEY = 'gaestebuchEintraege';
+
+    // Hilfsfunktion zum Escapen von HTML
+    function escapeHTML(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+    // E-Mail-Validierung
+    function isValidEmail(email) {
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    }
+
+    // Funktion zum Lesen der Einträge
+    function getEintraege() {
+        const eintraege = localStorage.getItem(STORAGE_KEY);
+        return eintraege ? JSON.parse(eintraege) : [];
+    }
+
+    // Funktion zum Speichern der Einträge
+    function saveEintraege(eintraege) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(eintraege));
+    }
 
     // Lade bestehende Einträge beim Start
     ladeEintraege();
 
     // Event-Listener für das Formular
-    form.addEventListener('submit', async function(e) {
+    form.addEventListener('submit', function(e) {
         e.preventDefault();
 
         // Hole die Formulardaten
-        const name = document.getElementById('name').value;
-        const email = document.getElementById('email').value;
-        const message = document.getElementById('message').value;
+        const name = document.getElementById('name').value.trim();
+        const email = document.getElementById('email').value.trim();
+        const message = document.getElementById('message').value.trim();
         const datum = new Date().toLocaleString('de-DE');
+
+        // Validierung
+        if (!name || !email || !message) {
+            alert('Bitte füllen Sie alle Felder aus.');
+            return;
+        }
+
+        if (!isValidEmail(email)) {
+            alert('Bitte geben Sie eine gültige E-Mail-Adresse ein.');
+            return;
+        }
 
         // Erstelle neuen Eintrag
         const neuerEintrag = {
+            id: Date.now(), // Eindeutige ID für jeden Eintrag
             name,
             email,
             message,
@@ -24,46 +60,49 @@ document.addEventListener('DOMContentLoaded', function() {
         };
 
         try {
-            // Sende den Eintrag an den Server
-            const response = await fetch('gaestebuch.php', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(neuerEintrag)
-            });
+            // Lade bestehende Einträge
+            const eintraege = getEintraege();
+            
+            // Füge neuen Eintrag am Anfang hinzu
+            eintraege.unshift(neuerEintrag);
+            
+            // Speichere aktualisierte Einträge
+            saveEintraege(eintraege);
 
-            if (!response.ok) {
-                throw new Error('Fehler beim Speichern des Eintrags');
-            }
+            // Zeige den Eintrag an
+            zeigeEintrag(neuerEintrag);
 
-            const result = await response.json();
-            if (result.success) {
-                // Zeige den Eintrag an
-                zeigeEintrag(neuerEintrag);
+            // Setze das Formular zurück
+            form.reset();
 
-                // Setze das Formular zurück
-                form.reset();
-
-                // Zeige Erfolgsmeldung
-                alert('Ihr Eintrag wurde erfolgreich gespeichert!');
-            } else {
-                throw new Error('Fehler beim Speichern des Eintrags');
-            }
+            // Zeige Erfolgsmeldung
+            alert('Ihr Eintrag wurde erfolgreich gespeichert!');
         } catch (error) {
             console.error('Fehler:', error);
             alert('Es gab einen Fehler beim Speichern Ihres Eintrags. Bitte versuchen Sie es später erneut.');
         }
     });
 
-    // Funktion zum Laden aller Einträge
-    async function ladeEintraege() {
-        try {
-            const response = await fetch('gaestebuch.php');
-            if (!response.ok) {
-                throw new Error('Fehler beim Laden der Einträge');
+    // Funktion zum Löschen eines Eintrags
+    function loescheEintrag(id) {
+        if (confirm('Möchten Sie diesen Eintrag wirklich löschen?')) {
+            try {
+                const eintraege = getEintraege();
+                const aktualisierteEintraege = eintraege.filter(eintrag => eintrag.id !== id);
+                saveEintraege(aktualisierteEintraege);
+                ladeEintraege(); // Lade die Liste neu
+            } catch (error) {
+                console.error('Fehler beim Löschen:', error);
+                alert('Fehler beim Löschen des Eintrags.');
             }
-            const eintraege = await response.json();
+        }
+    }
+
+    // Funktion zum Laden aller Einträge
+    function ladeEintraege() {
+        try {
+            eintraegeListe.innerHTML = ''; // Lösche bestehende Einträge
+            const eintraege = getEintraege();
             eintraege.forEach(eintrag => zeigeEintrag(eintrag));
         } catch (error) {
             console.error('Fehler:', error);
@@ -77,10 +116,11 @@ document.addEventListener('DOMContentLoaded', function() {
         eintragElement.className = 'eintrag';
         eintragElement.innerHTML = `
             <div class="eintrag-header">
-                <span class="eintrag-name">${eintrag.name}</span>
-                <span class="eintrag-datum">${eintrag.datum}</span>
+                <span class="eintrag-name">${escapeHTML(eintrag.name)}</span>
+                <span class="eintrag-datum">${escapeHTML(eintrag.datum)}</span>
+                <button class="loeschen-btn" onclick="loescheEintrag(${eintrag.id})">Löschen</button>
             </div>
-            <div class="eintrag-text">${eintrag.message}</div>
+            <div class="eintrag-text">${escapeHTML(eintrag.message)}</div>
         `;
 
         // Füge den neuen Eintrag am Anfang der Liste ein
@@ -90,4 +130,7 @@ document.addEventListener('DOMContentLoaded', function() {
             eintraegeListe.appendChild(eintragElement);
         }
     }
+
+    // Mache die Löschfunktion global verfügbar
+    window.loescheEintrag = loescheEintrag;
 }); 
